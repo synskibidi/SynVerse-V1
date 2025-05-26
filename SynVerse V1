@@ -1,0 +1,267 @@
+--// made by syzefr on discord dont change this
+--// Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+--// Settings
+local AimPart = "Head"
+local FOV_RADIUS = 150
+local AimbotEnabled = false
+local ESPEnabled = false
+local TeamCheckEnabled = false
+local DeadCheckEnabled = false
+local ThirdPersonForced = false
+local RagebotEnabled = false
+local Target = nil
+
+local AIM_OFFSET = Vector2.new(35, 5)
+local AIM_SMOOTHNESS = 0.1 -- Lower is faster aiming, higher is slower
+
+--// GUI Setup
+local gui = Instance.new("ScreenGui", game.CoreGui)
+gui.Name = "CamLockGui"
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 200, 0, 300)
+frame.Position = UDim2.new(0.5, -100, 0.85, 0)
+frame.BackgroundColor3 = Color3.fromRGB(60, 20, 90)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+frame.Name = "MainFrame"
+
+local frameCorner = Instance.new("UICorner", frame)
+frameCorner.CornerRadius = UDim.new(0, 12)
+
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundTransparency = 1
+title.Text = "SynVerse"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.TextColor3 = Color3.fromRGB(200, 100, 255)
+title.TextStrokeTransparency = 0.8
+title.LayoutOrder = 0
+
+local layout = Instance.new("UIListLayout", frame)
+layout.Padding = UDim.new(0, 6)
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+layout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+local function createButton(text)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 160, 0, 35)
+    btn.BackgroundColor3 = Color3.fromRGB(120, 40, 180)
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 16
+    btn.Text = text
+    btn.AutoButtonColor = true
+    btn.BorderSizePixel = 0
+    local corner = Instance.new("UICorner", btn)
+    corner.CornerRadius = UDim.new(0, 10)
+    return btn
+end
+
+local aimbotButton = createButton("Aimbot: OFF")
+aimbotButton.LayoutOrder = 1
+aimbotButton.Parent = frame
+
+local espButton = createButton("ESP: OFF")
+espButton.LayoutOrder = 2
+espButton.Parent = frame
+
+local teamCheckButton = createButton("Team Check: OFF")
+teamCheckButton.LayoutOrder = 3
+teamCheckButton.Parent = frame
+
+local deadCheckButton = createButton("Dead Check: OFF")
+deadCheckButton.LayoutOrder = 4
+deadCheckButton.Parent = frame
+
+local thirdPersonButton = createButton("Third Person: OFF")
+thirdPersonButton.LayoutOrder = 5
+thirdPersonButton.Parent = frame
+
+local ragebotButton = createButton("Ragebot: OFF")
+ragebotButton.LayoutOrder = 6
+ragebotButton.Parent = frame
+
+ragebotButton.MouseButton1Click:Connect(function()
+    RagebotEnabled = not RagebotEnabled
+    ragebotButton.Text = RagebotEnabled and "Ragebot: ON" or "Ragebot: OFF"
+end)
+
+-- FOV Circle (hidden)
+local fovCircle = Drawing.new("Circle")
+fovCircle.Visible = false  -- hidden now
+fovCircle.Radius = FOV_RADIUS
+fovCircle.Color = Color3.fromRGB(255, 0, 255)
+fovCircle.Thickness = 1
+fovCircle.Transparency = 0.7
+fovCircle.Filled = false
+
+local function hasLineOfSight(part)
+    local origin = Camera.CFrame.Position
+    local direction = (part.Position - origin).Unit * 500
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {LocalPlayer.Character}
+    local result = workspace:Raycast(origin, direction, params)
+    return result and result.Instance:IsDescendantOf(part.Parent)
+end
+
+local function getClosestPlayer()
+    local closest, shortestDistance = nil, FOV_RADIUS
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild(AimPart) then
+            if DeadCheckEnabled then
+                local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+                if not humanoid or humanoid.Health <= 0 then
+                    continue
+                end
+            end
+            if TeamCheckEnabled and LocalPlayer.Team and player.Team == LocalPlayer.Team then continue end
+            local part = player.Character[AimPart]
+            local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if onScreen and hasLineOfSight(part) then
+                local center = Vector2.new(Camera.ViewportSize.X / 2 + AIM_OFFSET.X, Camera.ViewportSize.Y / 2 + AIM_OFFSET.Y)
+                local dist = (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                if dist < shortestDistance then
+                    shortestDistance = dist
+                    closest = player
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local highlights = {}
+
+local function updateESP()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            if ESPEnabled then
+                if not highlights[player] then
+                    local highlight = Instance.new("Highlight")
+                    highlight.Adornee = player.Character
+                    highlight.Parent = player.Character
+                    highlights[player] = highlight
+                end
+                if LocalPlayer.Team and player.Team == LocalPlayer.Team then
+                    highlights[player].FillColor = Color3.fromRGB(255, 165, 0) -- Orange for teammates
+                    highlights[player].OutlineColor = Color3.fromRGB(255, 165, 0)
+                else
+                    highlights[player].FillColor = Color3.fromRGB(0, 85, 255) -- Blue for enemies
+                    highlights[player].OutlineColor = Color3.fromRGB(0, 85, 255)
+                end
+                highlights[player].FillTransparency = 0.6
+                highlights[player].OutlineTransparency = 0
+            else
+                if highlights[player] then
+                    highlights[player]:Destroy()
+                    highlights[player] = nil
+                end
+            end
+        end
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        wait(1) -- wait for character to load
+        if ESPEnabled then
+            updateESP()
+        end
+    end)
+    player:GetPropertyChangedSignal("Team"):Connect(function()
+        if ESPEnabled then
+            updateESP()
+        end
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    if highlights[player] then
+        highlights[player]:Destroy()
+        highlights[player] = nil
+    end
+end)
+
+aimbotButton.MouseButton1Click:Connect(function()
+    AimbotEnabled = not AimbotEnabled
+    aimbotButton.Text = AimbotEnabled and "Aimbot: ON" or "Aimbot: OFF"
+end)
+
+espButton.MouseButton1Click:Connect(function()
+    ESPEnabled = not ESPEnabled
+    espButton.Text = ESPEnabled and "ESP: ON" or "ESP: OFF"
+    updateESP()
+end)
+
+teamCheckButton.MouseButton1Click:Connect(function()
+    TeamCheckEnabled = not TeamCheckEnabled
+    teamCheckButton.Text = TeamCheckEnabled and "Team Check: ON" or "Team Check: OFF"
+end)
+
+deadCheckButton.MouseButton1Click:Connect(function()
+    DeadCheckEnabled = not DeadCheckEnabled
+    deadCheckButton.Text = DeadCheckEnabled and "Dead Check: ON" or "Dead Check: OFF"
+end)
+
+thirdPersonButton.MouseButton1Click:Connect(function()
+    ThirdPersonForced = not ThirdPersonForced
+    thirdPersonButton.Text = ThirdPersonForced and "Third Person: ON" or "Third Person: OFF"
+end)
+
+RunService.RenderStepped:Connect(function()
+    -- FOV circle position update (even if hidden)
+    fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2 + AIM_OFFSET.X, Camera.ViewportSize.Y / 2 + AIM_OFFSET.Y)
+
+    if RagebotEnabled then
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(30), 0)
+        end
+    end
+
+    if AimbotEnabled then
+        Target = getClosestPlayer()
+        if Target and Target.Character and Target.Character:FindFirstChild(AimPart) then
+            local partPos = Target.Character[AimPart].Position
+            local camPos = Camera.CFrame.Position
+            local targetCFrame = CFrame.new(camPos, partPos)
+
+            -- Smooth lerp for human-like aiming
+            Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, AIM_SMOOTHNESS)
+        end
+    end
+
+    if ThirdPersonForced then
+        pcall(function()
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+            Camera.CameraType = Enum.CameraType.Custom
+            Camera.CameraSubject = LocalPlayer.Character:FindFirstChild("Humanoid")
+            LocalPlayer.Character.Humanoid.CameraOffset = Vector3.new(1.5, 0, 2)
+        end)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if ThirdPersonForced then
+            pcall(function()
+                LocalPlayer.CameraMode = Enum.CameraMode.Classic
+                Camera.CameraType = Enum.CameraType.Custom
+                Camera.CameraSubject = LocalPlayer.Character:FindFirstChild("Humanoid")
+                LocalPlayer.Character.Humanoid.CameraOffset = Vector3.new(1.5, 0, 2)
+            end)
+        end
+        task.wait(1)
+    end
+end)
